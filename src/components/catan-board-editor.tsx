@@ -634,18 +634,28 @@ function BoardSvg({
       {geometry.boundaryEdges.map((edge) => {
         const port = board.ports[edge.id];
         const portPoint = getPortPoint(edge, geometry.boardCenter);
-        const dockPoint = getDockPoint(edge, geometry.boardCenter);
+        const bridgeOpacity = port ? 0.95 : mode === "port" ? 0.25 : 0;
         return (
           <g key={edge.id}>
             <line
-              x1={midpoint(edge).x}
-              y1={midpoint(edge).y}
-              x2={dockPoint.x}
-              y2={dockPoint.y}
+              x1={edge.start.x}
+              y1={edge.start.y}
+              x2={portPoint.x}
+              y2={portPoint.y}
               stroke="#d2912f"
-              strokeWidth={8}
+              strokeWidth={7}
               strokeLinecap="round"
-              opacity={port ? 0.95 : mode === "port" ? 0.25 : 0}
+              opacity={bridgeOpacity}
+            />
+            <line
+              x1={edge.end.x}
+              y1={edge.end.y}
+              x2={portPoint.x}
+              y2={portPoint.y}
+              stroke="#d2912f"
+              strokeWidth={7}
+              strokeLinecap="round"
+              opacity={bridgeOpacity}
             />
             <g
               role="button"
@@ -1482,19 +1492,6 @@ function getPortPoint(edge: EdgeGeometry, boardCenter: Point) {
   return {
     x: mid.x + (vector.x / length) * 58,
     y: mid.y + (vector.y / length) * 58,
-  };
-}
-
-function getDockPoint(edge: EdgeGeometry, boardCenter: Point) {
-  const mid = midpoint(edge);
-  const vector = {
-    x: mid.x - boardCenter.x,
-    y: mid.y - boardCenter.y,
-  };
-  const length = Math.hypot(vector.x, vector.y) || 1;
-  return {
-    x: mid.x + (vector.x / length) * 72,
-    y: mid.y + (vector.y / length) * 72,
   };
 }
 
