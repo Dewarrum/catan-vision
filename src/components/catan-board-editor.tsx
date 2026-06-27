@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  useId,
   useMemo,
   useState,
   type ComponentType,
@@ -113,6 +114,7 @@ const TERRAIN_OPTIONS: Array<{
   resource: string;
   className: string;
   fill: string;
+  imageHref?: string;
   standardCount: number;
 }> = [
   {
@@ -121,6 +123,7 @@ const TERRAIN_OPTIONS: Array<{
     resource: "Brick",
     className: "bg-red-100 text-red-950",
     fill: "#c86b4a",
+    imageHref: "/catan-tiles/brick.png",
     standardCount: 3,
   },
   {
@@ -129,6 +132,7 @@ const TERRAIN_OPTIONS: Array<{
     resource: "Lumber",
     className: "bg-emerald-100 text-emerald-950",
     fill: "#2f7d4f",
+    imageHref: "/catan-tiles/wood.png",
     standardCount: 4,
   },
   {
@@ -137,6 +141,7 @@ const TERRAIN_OPTIONS: Array<{
     resource: "Ore",
     className: "bg-slate-200 text-slate-950",
     fill: "#8d929a",
+    imageHref: "/catan-tiles/ore.png",
     standardCount: 3,
   },
   {
@@ -145,6 +150,7 @@ const TERRAIN_OPTIONS: Array<{
     resource: "Grain",
     className: "bg-yellow-100 text-yellow-950",
     fill: "#d8b84f",
+    imageHref: "/catan-tiles/wheat.png",
     standardCount: 4,
   },
   {
@@ -153,6 +159,7 @@ const TERRAIN_OPTIONS: Array<{
     resource: "Wool",
     className: "bg-lime-100 text-lime-950",
     fill: "#91b95d",
+    imageHref: "/catan-tiles/sheep.png",
     standardCount: 4,
   },
   {
@@ -558,6 +565,7 @@ function BoardSvg({
   onPieceClear: (vertexId: string) => void;
   onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
 }) {
+  const clipIdPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const activeTileIndex = activeTileId
     ? board.tiles.findIndex((tile) => tile.id === activeTileId)
     : -1;
@@ -587,6 +595,11 @@ function BoardSvg({
         <filter id="piece-shadow" x="-30%" y="-30%" width="160%" height="160%">
           <feDropShadow dx="0" dy="4" floodColor="#111827" floodOpacity="0.45" stdDeviation="2" />
         </filter>
+        {geometry.hexes.map((hex) => (
+          <clipPath key={`${hex.id}-clip`} id={`${clipIdPrefix}-${hex.id}-clip`}>
+            <polygon points={pointsToString(hex.points)} />
+          </clipPath>
+        ))}
       </defs>
 
       <rect x="-200" y="-200" width="1400" height="1200" fill="#0d75a6" />
@@ -633,6 +646,7 @@ function BoardSvg({
         {geometry.hexes.map((hex, index) => {
           const tile = board.tiles[index];
           const terrain = getTerrainOption(tile.terrain);
+          const imageBox = getHexImageBox(hex);
           const isHotToken = tile.token === 6 || tile.token === 8;
           const isActive = activeTileId === tile.id;
           return (
@@ -661,14 +675,31 @@ function BoardSvg({
                 strokeWidth={isActive ? 7 : mode === "tile" ? 5 : 3}
                 strokeLinejoin="round"
               />
+              {terrain.imageHref ? (
+                <image
+                  href={terrain.imageHref}
+                  x={imageBox.x}
+                  y={imageBox.y}
+                  width={imageBox.width}
+                  height={imageBox.height}
+                  preserveAspectRatio="xMidYMid slice"
+                  clipPath={`url(#${clipIdPrefix}-${hex.id}-clip)`}
+                />
+              ) : null}
               <polygon
                 points={pointsToString(scalePolygon(hex.points, hex.center, 0.78))}
                 fill="none"
-                stroke="rgba(255,255,255,0.32)"
+                stroke={
+                  terrain.imageHref
+                    ? "rgba(255,255,255,0.46)"
+                    : "rgba(255,255,255,0.32)"
+                }
                 strokeWidth={2}
                 strokeLinejoin="round"
               />
-              <TerrainEmblem terrain={tile.terrain} center={hex.center} />
+              {terrain.imageHref ? null : (
+                <TerrainEmblem terrain={tile.terrain} center={hex.center} />
+              )}
               <text
                 x={hex.center.x}
                 y={hex.center.y - 42}
@@ -990,6 +1021,16 @@ function TileTerrainMenu({
               stroke="rgba(0,0,0,0.3)"
               strokeWidth={1}
             />
+            {terrain.imageHref ? (
+              <image
+                href={terrain.imageHref}
+                x={buttonX + 7}
+                y={buttonY + 7}
+                width={16}
+                height={16}
+                preserveAspectRatio="xMidYMid slice"
+              />
+            ) : null}
             <text
               x={buttonX + 30}
               y={buttonY + 20}
@@ -1818,6 +1859,17 @@ function scalePolygon(points: Point[], center: Point, scale: number) {
     x: round(center.x + (point.x - center.x) * scale),
     y: round(center.y + (point.y - center.y) * scale),
   }));
+}
+
+function getHexImageBox(hex: HexGeometry) {
+  const bounds = getBounds(hex.points);
+
+  return {
+    x: bounds.minX,
+    y: bounds.minY,
+    width: bounds.maxX - bounds.minX,
+    height: bounds.maxY - bounds.minY,
+  };
 }
 
 function getTerrainOption(terrain: TerrainType) {
