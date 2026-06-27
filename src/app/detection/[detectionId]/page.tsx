@@ -1,4 +1,4 @@
-import { DetectionPreview } from "@/components/detection-preview";
+import { CatanBoardEditor } from "@/components/catan-board-editor";
 
 type DetectionPageProps = {
   params: Promise<{
@@ -10,11 +10,9 @@ export default async function DetectionPage({ params }: DetectionPageProps) {
   const { detectionId } = await params;
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-background px-6 py-10 text-foreground">
-      <DetectionPreview
-        detectionId={detectionId}
-        isConvexConfigured={Boolean(process.env.NEXT_PUBLIC_CONVEX_URL)}
-      />
-    </main>
+    <CatanBoardEditor
+      detectionId={detectionId}
+      isConvexConfigured={Boolean(process.env.NEXT_PUBLIC_CONVEX_URL)}
+    />
   );
 }
