@@ -66,6 +66,13 @@ type Point = {
   y: number;
 };
 
+type ViewBoxBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 type HexGeometry = {
   id: string;
   center: Point;
@@ -158,20 +165,6 @@ const TERRAIN_OPTIONS: Array<{
   },
 ];
 
-const NUMBER_OPTIONS: NumberToken[] = [
-  null,
-  2,
-  3,
-  4,
-  5,
-  6,
-  8,
-  9,
-  10,
-  11,
-  12,
-];
-
 const PORT_OPTIONS: Array<{
   value: PortType;
   label: string;
@@ -246,6 +239,19 @@ const INITIAL_TOKENS: NumberToken[] = [
   11,
 ];
 
+const NUMBER_TOKEN_OPTIONS: Array<Exclude<NumberToken, null>> = [
+  2,
+  3,
+  4,
+  5,
+  6,
+  8,
+  9,
+  10,
+  11,
+  12,
+];
+
 const MODE_OPTIONS: Array<{
   value: ToolMode;
   label: string;
@@ -264,9 +270,7 @@ export function CatanBoardEditor({
 }: CatanBoardEditorProps) {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [mode, setMode] = useState<ToolMode>("tile");
-  const [selectedTerrain, setSelectedTerrain] =
-    useState<TerrainType>("forest");
-  const [selectedToken, setSelectedToken] = useState<NumberToken>(null);
+  const [activeTileId, setActiveTileId] = useState<string | null>(null);
   const [selectedPort, setSelectedPort] = useState<PortType>("generic");
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerColor>("red");
   const [selectedPiece, setSelectedPiece] = useState<PieceKind>("settlement");
@@ -276,12 +280,23 @@ export function CatanBoardEditor({
     [board, geometry],
   );
 
-  function updateTile(tileId: string) {
+  function updateTileTerrain(tileId: string, terrain: TerrainType) {
     setBoard((current) => ({
       ...current,
       tiles: current.tiles.map((tile) =>
         tile.id === tileId
-          ? { ...tile, terrain: selectedTerrain, token: selectedToken }
+          ? { ...tile, terrain, token: terrain === "desert" ? null : tile.token }
+          : tile,
+      ),
+    }));
+  }
+
+  function updateTileToken(tileId: string, token: Exclude<NumberToken, null>) {
+    setBoard((current) => ({
+      ...current,
+      tiles: current.tiles.map((tile) =>
+        tile.id === tileId && tile.terrain !== "desert"
+          ? { ...tile, token }
           : tile,
       ),
     }));
@@ -339,6 +354,16 @@ export function CatanBoardEditor({
     });
   }
 
+  function changeMode(nextMode: ToolMode) {
+    setMode(nextMode);
+    setActiveTileId(null);
+  }
+
+  function resetBoard() {
+    setBoard(createInitialBoard());
+    setActiveTileId(null);
+  }
+
   function activateSvgControl(
     event: KeyboardEvent<SVGGElement>,
     action: () => void,
@@ -350,12 +375,15 @@ export function CatanBoardEditor({
   }
 
   return (
-    <main className="min-h-dvh overflow-auto bg-[#086f9f] text-slate-950 lg:h-dvh lg:overflow-hidden">
+    <main
+      className="min-h-dvh overflow-auto bg-[#086f9f] text-slate-950 lg:h-dvh lg:overflow-hidden"
+      onClick={() => setActiveTileId(null)}
+    >
       <div className="grid min-h-dvh gap-3 p-3 md:p-4 lg:h-dvh lg:min-h-0 lg:grid-cols-[4.5rem_minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)_auto]">
         <ModeRail
           mode={mode}
-          onModeChange={setMode}
-          onReset={() => setBoard(createInitialBoard())}
+          onModeChange={changeMode}
+          onReset={resetBoard}
         />
 
         <section className="relative min-h-[560px] overflow-hidden rounded-lg border border-cyan-950/25 bg-[#0d75a6] shadow-2xl shadow-cyan-950/30 lg:min-h-0">
@@ -381,14 +409,21 @@ export function CatanBoardEditor({
             board={board}
             geometry={geometry}
             mode={mode}
+            activeTileId={activeTileId}
             onTileClick={(tileId) => {
               if (mode === "tile") {
-                updateTile(tileId);
+                setActiveTileId((current) =>
+                  current === tileId ? null : tileId,
+                );
               }
               if (mode === "robber") {
+                setActiveTileId(null);
                 toggleRobber(tileId);
               }
             }}
+            onTileTerrainChange={updateTileTerrain}
+            onTileTokenChange={updateTileToken}
+            onDismissTileMenu={() => setActiveTileId(null)}
             onPortClick={(edgeId) => mode === "port" && togglePort(edgeId)}
             onRoadClick={(edgeId) => mode === "road" && toggleRoad(edgeId)}
             onPieceClick={(vertexId) =>
@@ -407,19 +442,17 @@ export function CatanBoardEditor({
           <WarningsPanel warnings={warnings} />
         </aside>
 
-        <EditorToolbar
-          mode={mode}
-          selectedTerrain={selectedTerrain}
-          selectedToken={selectedToken}
-          selectedPort={selectedPort}
-          selectedPlayer={selectedPlayer}
-          selectedPiece={selectedPiece}
-          onTerrainChange={setSelectedTerrain}
-          onTokenChange={setSelectedToken}
-          onPortChange={setSelectedPort}
-          onPlayerChange={setSelectedPlayer}
-          onPieceChange={setSelectedPiece}
-        />
+        {mode !== "tile" ? (
+          <EditorToolbar
+            mode={mode}
+            selectedPort={selectedPort}
+            selectedPlayer={selectedPlayer}
+            selectedPiece={selectedPiece}
+            onPortChange={setSelectedPort}
+            onPlayerChange={setSelectedPlayer}
+            onPieceChange={setSelectedPiece}
+          />
+        ) : null}
       </div>
     </main>
   );
@@ -478,7 +511,11 @@ function BoardSvg({
   board,
   geometry,
   mode,
+  activeTileId,
   onTileClick,
+  onTileTerrainChange,
+  onTileTokenChange,
+  onDismissTileMenu,
   onPortClick,
   onRoadClick,
   onPieceClick,
@@ -487,17 +524,34 @@ function BoardSvg({
   board: BoardState;
   geometry: BoardGeometry;
   mode: ToolMode;
+  activeTileId: string | null;
   onTileClick: (tileId: string) => void;
+  onTileTerrainChange: (tileId: string, terrain: TerrainType) => void;
+  onTileTokenChange: (tileId: string, token: Exclude<NumberToken, null>) => void;
+  onDismissTileMenu: () => void;
   onPortClick: (edgeId: string) => void;
   onRoadClick: (edgeId: string) => void;
   onPieceClick: (vertexId: string) => void;
   onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
 }) {
+  const activeTileIndex = activeTileId
+    ? board.tiles.findIndex((tile) => tile.id === activeTileId)
+    : -1;
+  const activeTile =
+    activeTileIndex >= 0 ? board.tiles[activeTileIndex] : null;
+  const activeHex =
+    activeTileIndex >= 0 ? geometry.hexes[activeTileIndex] : null;
+  const viewBoxBounds = useMemo(
+    () => getViewBoxBounds(geometry.viewBox),
+    [geometry.viewBox],
+  );
+
   return (
     <svg
       viewBox={geometry.viewBox}
       className="relative z-0 block h-full min-h-[560px] w-full lg:min-h-0"
       aria-label="Editable Catan board"
+      onClick={onDismissTileMenu}
     >
       <defs>
         <filter id="tile-shadow" x="-25%" y="-25%" width="150%" height="150%">
@@ -553,6 +607,7 @@ function BoardSvg({
           const tile = board.tiles[index];
           const terrain = getTerrainOption(tile.terrain);
           const isHotToken = tile.token === 6 || tile.token === 8;
+          const isActive = activeTileId === tile.id;
           return (
             <g
               key={hex.id}
@@ -560,14 +615,23 @@ function BoardSvg({
               tabIndex={0}
               className="cursor-pointer outline-none"
               aria-label={`${terrain.label} tile ${index + 1}`}
-              onClick={() => onTileClick(tile.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onTileClick(tile.id);
+              }}
               onKeyDown={(event) => onKeyActivate(event, () => onTileClick(tile.id))}
             >
               <polygon
                 points={pointsToString(hex.points)}
                 fill={terrain.fill}
-                stroke={mode === "tile" ? "#fff7d6" : "#8d6a2f"}
-                strokeWidth={mode === "tile" ? 5 : 3}
+                stroke={
+                  isActive
+                    ? "#0f172a"
+                    : mode === "tile"
+                      ? "#fff7d6"
+                      : "#8d6a2f"
+                }
+                strokeWidth={isActive ? 7 : mode === "tile" ? 5 : 3}
                 strokeLinejoin="round"
               />
               <polygon
@@ -759,97 +823,229 @@ function BoardSvg({
           </g>
         );
       })}
+      {mode === "tile" && activeTile && activeHex ? (
+        <TileTerrainMenu
+          tile={activeTile}
+          hex={activeHex}
+          viewBoxBounds={viewBoxBounds}
+          onTerrainChange={onTileTerrainChange}
+          onTokenChange={onTileTokenChange}
+          onKeyActivate={onKeyActivate}
+        />
+      ) : null}
     </svg>
+  );
+}
+
+function TileTerrainMenu({
+  tile,
+  hex,
+  viewBoxBounds,
+  onTerrainChange,
+  onTokenChange,
+  onKeyActivate,
+}: {
+  tile: TileState;
+  hex: HexGeometry;
+  viewBoxBounds: ViewBoxBounds;
+  onTerrainChange: (tileId: string, terrain: TerrainType) => void;
+  onTokenChange: (tileId: string, token: Exclude<NumberToken, null>) => void;
+  onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
+}) {
+  const menuWidth = 336;
+  const canEditToken = tile.terrain !== "desert";
+  const menuHeight = canEditToken ? 204 : 112;
+  const menuX = clamp(
+    hex.center.x - menuWidth / 2,
+    viewBoxBounds.x + 14,
+    viewBoxBounds.x + viewBoxBounds.width - menuWidth - 14,
+  );
+  const menuY = Math.max(viewBoxBounds.y + 14, hex.center.y - menuHeight - 38);
+  const arrowX = clamp(hex.center.x, menuX + 24, menuX + menuWidth - 24);
+
+  return (
+    <g
+      role="menu"
+      aria-label="Tile terrain and number"
+      className="cursor-default"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <path
+        d={`M ${arrowX - 12} ${menuY + menuHeight} L ${arrowX} ${
+          menuY + menuHeight + 12
+        } L ${arrowX + 12} ${menuY + menuHeight} Z`}
+        fill="#fffaf0"
+        stroke="#0f172a"
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      <rect
+        x={menuX}
+        y={menuY}
+        width={menuWidth}
+        height={menuHeight}
+        rx={10}
+        fill="#fffaf0"
+        stroke="#0f172a"
+        strokeWidth={2.5}
+      />
+      <text
+        x={menuX + 14}
+        y={menuY + 23}
+        className="fill-slate-700 text-[12px] font-black uppercase"
+      >
+        Tile type
+      </text>
+      {TERRAIN_OPTIONS.map((terrain, index) => {
+        const column = index % 3;
+        const row = Math.floor(index / 3);
+        const buttonX = menuX + 12 + column * 104;
+        const buttonY = menuY + 34 + row * 36;
+        const isSelected = tile.terrain === terrain.value;
+
+        return (
+          <g
+            key={terrain.value}
+            role="menuitemradio"
+            aria-checked={isSelected}
+            tabIndex={0}
+            className="cursor-pointer outline-none"
+            onClick={(event) => {
+              event.stopPropagation();
+              onTerrainChange(tile.id, terrain.value);
+            }}
+            onKeyDown={(event) =>
+              onKeyActivate(event, () =>
+                onTerrainChange(tile.id, terrain.value),
+              )
+            }
+          >
+            <rect
+              x={buttonX}
+              y={buttonY}
+              width={96}
+              height={30}
+              rx={6}
+              fill={isSelected ? "#083344" : "#ffffff"}
+              stroke={isSelected ? "#083344" : "#cbd5e1"}
+              strokeWidth={1.5}
+            />
+            <rect
+              x={buttonX + 7}
+              y={buttonY + 7}
+              width={16}
+              height={16}
+              rx={3}
+              fill={terrain.fill}
+              stroke="rgba(0,0,0,0.3)"
+              strokeWidth={1}
+            />
+            <text
+              x={buttonX + 30}
+              y={buttonY + 20}
+              className={cn(
+                "text-[12px] font-black",
+                isSelected ? "fill-white" : "fill-slate-800",
+              )}
+            >
+              {getTerrainTrayLabel(terrain)}
+            </text>
+          </g>
+        );
+      })}
+      {canEditToken ? (
+        <>
+          <line
+            x1={menuX + 12}
+            y1={menuY + 113}
+            x2={menuX + menuWidth - 12}
+            y2={menuY + 113}
+            stroke="#e2e8f0"
+            strokeWidth={1.5}
+          />
+          <text
+            x={menuX + 14}
+            y={menuY + 134}
+            className="fill-slate-700 text-[12px] font-black uppercase"
+          >
+            Number
+          </text>
+          {NUMBER_TOKEN_OPTIONS.map((token, index) => {
+            const column = index % 5;
+            const row = Math.floor(index / 5);
+            const buttonX = menuX + 18 + column * 60;
+            const buttonY = menuY + 144 + row * 28;
+            const isSelected = tile.token === token;
+            const isHotToken = token === 6 || token === 8;
+
+            return (
+              <g
+                key={token}
+                role="menuitemradio"
+                aria-checked={isSelected}
+                tabIndex={0}
+                className="cursor-pointer outline-none"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTokenChange(tile.id, token);
+                }}
+                onKeyDown={(event) =>
+                  onKeyActivate(event, () => onTokenChange(tile.id, token))
+                }
+              >
+                <rect
+                  x={buttonX}
+                  y={buttonY}
+                  width={48}
+                  height={24}
+                  rx={6}
+                  fill={isSelected ? "#083344" : "#ffffff"}
+                  stroke={isSelected ? "#083344" : "#cbd5e1"}
+                  strokeWidth={1.5}
+                />
+                <text
+                  x={buttonX + 24}
+                  y={buttonY + 17}
+                  textAnchor="middle"
+                  className={cn(
+                    "text-[13px] font-black",
+                    isSelected
+                      ? "fill-white"
+                      : isHotToken
+                        ? "fill-red-700"
+                        : "fill-slate-800",
+                  )}
+                >
+                  {token}
+                </text>
+              </g>
+            );
+          })}
+        </>
+      ) : null}
+    </g>
   );
 }
 
 function EditorToolbar({
   mode,
-  selectedTerrain,
-  selectedToken,
   selectedPort,
   selectedPlayer,
   selectedPiece,
-  onTerrainChange,
-  onTokenChange,
   onPortChange,
   onPlayerChange,
   onPieceChange,
 }: {
   mode: ToolMode;
-  selectedTerrain: TerrainType;
-  selectedToken: NumberToken;
   selectedPort: PortType;
   selectedPlayer: PlayerColor;
   selectedPiece: PieceKind;
-  onTerrainChange: (value: TerrainType) => void;
-  onTokenChange: (value: NumberToken) => void;
   onPortChange: (value: PortType) => void;
   onPlayerChange: (value: PlayerColor) => void;
   onPieceChange: (value: PieceKind) => void;
 }) {
   return (
     <div className="rounded-lg border border-white/35 bg-white/92 p-3 shadow-xl shadow-cyan-950/20 backdrop-blur lg:col-start-2 lg:row-start-2">
-      {mode === "tile" ? (
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)]">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-              <Hexagon className="size-4" />
-              Tile
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-              {TERRAIN_OPTIONS.map((terrain) => (
-                <button
-                  key={terrain.value}
-                  type="button"
-                  className={cn(
-                    "grid min-h-16 place-items-center gap-1 rounded-md border px-1 text-center text-xs font-black shadow-sm transition",
-                    selectedTerrain === terrain.value
-                      ? "border-cyan-950 bg-cyan-950 text-white"
-                      : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
-                  )}
-                  onClick={() => onTerrainChange(terrain.value)}
-                >
-                  <span
-                    className="size-7 shrink-0 rounded-sm border border-black/20"
-                    style={{ backgroundColor: terrain.fill }}
-                    aria-hidden="true"
-                  />
-                  <span>{getTerrainTrayLabel(terrain)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-              <CircleDot className="size-4" />
-              Number
-            </div>
-            <div className="grid grid-cols-6 gap-2 sm:grid-cols-11">
-              {NUMBER_OPTIONS.map((token) => {
-                const isHotToken = token === 6 || token === 8;
-                return (
-                  <button
-                    key={token ?? "none"}
-                    type="button"
-                    className={cn(
-                      "grid aspect-square min-h-10 place-items-center rounded-md border text-sm font-black shadow-sm transition",
-                      selectedToken === token
-                        ? "border-cyan-950 bg-cyan-950 text-white"
-                        : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
-                      isHotToken && selectedToken !== token ? "text-red-700" : "",
-                    )}
-                    onClick={() => onTokenChange(token)}
-                  >
-                    {token ?? "-"}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {mode === "port" ? (
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
@@ -1349,6 +1545,18 @@ function createHexPoints(center: Point, size: number) {
       y: round(center.y + size * Math.sin(angle)),
     };
   });
+}
+
+function getViewBoxBounds(viewBox: string): ViewBoxBounds {
+  const [x, y, width, height] = viewBox
+    .split(" ")
+    .map((value) => Number(value));
+
+  return { x, y, width, height };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function validateBoardState(board: BoardState, geometry: BoardGeometry) {
