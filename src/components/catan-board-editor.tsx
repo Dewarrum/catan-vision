@@ -287,11 +287,13 @@ export function CatanBoardEditor({
     }));
   }
 
-  function toggleRobber(tileId: string) {
+  function setRobberTile(tileId: string) {
     setBoard((current) => ({
       ...current,
       tiles: current.tiles.map((tile) =>
-        tile.id === tileId ? { ...tile, robber: !tile.robber } : tile,
+        tile.robber === (tile.id === tileId)
+          ? tile
+          : { ...tile, robber: tile.id === tileId },
       ),
     }));
   }
@@ -416,7 +418,7 @@ export function CatanBoardEditor({
             }}
             onTileTerrainChange={updateTileTerrain}
             onTileTokenChange={updateTileToken}
-            onTileRobberToggle={toggleRobber}
+            onTileRobberSet={setRobberTile}
             onDismissMenus={dismissBoardMenus}
             onPortClick={(edgeId) => {
               setActiveTileId(null);
@@ -475,7 +477,7 @@ function BoardSvg({
   onTileClick,
   onTileTerrainChange,
   onTileTokenChange,
-  onTileRobberToggle,
+  onTileRobberSet,
   onDismissMenus,
   onPortClick,
   onPortSet,
@@ -497,7 +499,7 @@ function BoardSvg({
   onTileClick: (tileId: string) => void;
   onTileTerrainChange: (tileId: string, terrain: TerrainType) => void;
   onTileTokenChange: (tileId: string, token: Exclude<NumberToken, null>) => void;
-  onTileRobberToggle: (tileId: string) => void;
+  onTileRobberSet: (tileId: string) => void;
   onDismissMenus: () => void;
   onPortClick: (edgeId: string) => void;
   onPortSet: (edgeId: string, port: PortType) => void;
@@ -910,7 +912,7 @@ function BoardSvg({
           viewBoxBounds={viewBoxBounds}
           onTerrainChange={onTileTerrainChange}
           onTokenChange={onTileTokenChange}
-          onRobberToggle={onTileRobberToggle}
+          onRobberSet={onTileRobberSet}
           onKeyActivate={onKeyActivate}
         />
       ) : null}
@@ -924,7 +926,7 @@ function TileTerrainMenu({
   viewBoxBounds,
   onTerrainChange,
   onTokenChange,
-  onRobberToggle,
+  onRobberSet,
   onKeyActivate,
 }: {
   tile: TileState;
@@ -932,7 +934,7 @@ function TileTerrainMenu({
   viewBoxBounds: ViewBoxBounds;
   onTerrainChange: (tileId: string, terrain: TerrainType) => void;
   onTokenChange: (tileId: string, token: Exclude<NumberToken, null>) => void;
-  onRobberToggle: (tileId: string) => void;
+  onRobberSet: (tileId: string) => void;
   onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
 }) {
   const menuWidth = 336;
@@ -1125,16 +1127,16 @@ function TileTerrainMenu({
         strokeWidth={1.5}
       />
       <g
-        role="menuitemcheckbox"
+        role="menuitemradio"
         aria-checked={tile.robber}
         tabIndex={0}
         className="cursor-pointer outline-none"
         onClick={(event) => {
           event.stopPropagation();
-          onRobberToggle(tile.id);
+          onRobberSet(tile.id);
         }}
         onKeyDown={(event) =>
-          onKeyActivate(event, () => onRobberToggle(tile.id))
+          onKeyActivate(event, () => onRobberSet(tile.id))
         }
       >
         <rect
