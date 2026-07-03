@@ -12,13 +12,10 @@ import {
   AlertTriangle,
   Camera,
   CheckCircle2,
-  ShipWheel,
   Sparkles,
-  Undo2,
 } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type TerrainType =
@@ -259,9 +256,9 @@ export function CatanBoardEditor({
 }: CatanBoardEditorProps) {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [activeTileId, setActiveTileId] = useState<string | null>(null);
+  const [activePortId, setActivePortId] = useState<string | null>(null);
   const [activeRoadId, setActiveRoadId] = useState<string | null>(null);
   const [activeVertexId, setActiveVertexId] = useState<string | null>(null);
-  const [selectedPort, setSelectedPort] = useState<PortType>("generic");
   const geometry = useMemo(() => createBoardGeometry(), []);
   const warnings = useMemo(
     () => validateBoardState(board, geometry),
@@ -338,27 +335,27 @@ export function CatanBoardEditor({
     setActiveVertexId(null);
   }
 
-  function togglePort(edgeId: string) {
+  function setPort(edgeId: string, port: PortType) {
     setBoard((current) => {
       const ports = { ...current.ports };
-      if (ports[edgeId] === selectedPort) {
-        delete ports[edgeId];
-      } else {
-        ports[edgeId] = selectedPort;
-      }
+      ports[edgeId] = port;
       return { ...current, ports };
     });
+    setActivePortId(null);
   }
 
-  function resetBoard() {
-    setBoard(createInitialBoard());
-    setActiveTileId(null);
-    setActiveRoadId(null);
-    setActiveVertexId(null);
+  function clearPort(edgeId: string) {
+    setBoard((current) => {
+      const ports = { ...current.ports };
+      delete ports[edgeId];
+      return { ...current, ports };
+    });
+    setActivePortId(null);
   }
 
   function dismissBoardMenus() {
     setActiveTileId(null);
+    setActivePortId(null);
     setActiveRoadId(null);
     setActiveVertexId(null);
   }
@@ -382,7 +379,7 @@ export function CatanBoardEditor({
         }
       }}
     >
-      <div className="grid min-h-dvh gap-3 p-3 md:p-4 lg:h-dvh lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)_auto]">
+      <div className="grid min-h-dvh gap-3 p-3 md:p-4 lg:h-dvh lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="relative min-h-[560px] overflow-hidden rounded-lg border border-cyan-950/25 bg-[#0d75a6] shadow-2xl shadow-cyan-950/30 lg:min-h-0">
           <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(255,255,255,0.13)_0_1px,transparent_1px_42px),linear-gradient(25deg,rgba(255,255,255,0.08)_0_1px,transparent_1px_54px)]" />
           <div className="absolute left-3 top-3 z-10 flex items-center gap-3 rounded-md border border-white/30 bg-white/85 px-3 py-2 shadow-lg shadow-cyan-950/20 backdrop-blur">
@@ -406,9 +403,11 @@ export function CatanBoardEditor({
             board={board}
             geometry={geometry}
             activeTileId={activeTileId}
+            activePortId={activePortId}
             activeRoadId={activeRoadId}
             activeVertexId={activeVertexId}
             onTileClick={(tileId) => {
+              setActivePortId(null);
               setActiveRoadId(null);
               setActiveVertexId(null);
               setActiveTileId((current) =>
@@ -423,10 +422,15 @@ export function CatanBoardEditor({
               setActiveTileId(null);
               setActiveRoadId(null);
               setActiveVertexId(null);
-              togglePort(edgeId);
+              setActivePortId((current) =>
+                current === edgeId ? null : edgeId,
+              );
             }}
+            onPortSet={setPort}
+            onPortClear={clearPort}
             onRoadClick={(edgeId) => {
               setActiveTileId(null);
+              setActivePortId(null);
               setActiveVertexId(null);
               setActiveRoadId((current) =>
                 current === edgeId ? null : edgeId,
@@ -436,6 +440,7 @@ export function CatanBoardEditor({
             onRoadClear={clearRoad}
             onPieceClick={(vertexId) => {
               setActiveTileId(null);
+              setActivePortId(null);
               setActiveRoadId(null);
               setActiveVertexId((current) =>
                 current === vertexId ? null : vertexId,
@@ -447,7 +452,7 @@ export function CatanBoardEditor({
           />
         </section>
 
-        <aside className="grid min-h-[520px] gap-3 lg:col-start-3 lg:row-span-2 lg:min-h-0 lg:grid-rows-[auto_auto_minmax(0,1fr)]">
+        <aside className="grid min-h-[520px] gap-3 lg:col-start-2 lg:min-h-0 lg:grid-rows-[auto_auto_minmax(0,1fr)]">
           <DetectionImagePanel
             detectionId={detectionId}
             isConvexConfigured={isConvexConfigured}
@@ -455,12 +460,6 @@ export function CatanBoardEditor({
           <BoardSummary board={board} warnings={warnings} />
           <WarningsPanel warnings={warnings} />
         </aside>
-
-        <EditorToolbar
-          selectedPort={selectedPort}
-          onPortChange={setSelectedPort}
-          onReset={resetBoard}
-        />
       </div>
     </main>
   );
@@ -470,6 +469,7 @@ function BoardSvg({
   board,
   geometry,
   activeTileId,
+  activePortId,
   activeRoadId,
   activeVertexId,
   onTileClick,
@@ -478,6 +478,8 @@ function BoardSvg({
   onTileRobberToggle,
   onDismissMenus,
   onPortClick,
+  onPortSet,
+  onPortClear,
   onRoadClick,
   onRoadSet,
   onRoadClear,
@@ -489,6 +491,7 @@ function BoardSvg({
   board: BoardState;
   geometry: BoardGeometry;
   activeTileId: string | null;
+  activePortId: string | null;
   activeRoadId: string | null;
   activeVertexId: string | null;
   onTileClick: (tileId: string) => void;
@@ -497,6 +500,8 @@ function BoardSvg({
   onTileRobberToggle: (tileId: string) => void;
   onDismissMenus: () => void;
   onPortClick: (edgeId: string) => void;
+  onPortSet: (edgeId: string, port: PortType) => void;
+  onPortClear: (edgeId: string) => void;
   onRoadClick: (edgeId: string) => void;
   onRoadSet: (edgeId: string, player: PlayerColor) => void;
   onRoadClear: (edgeId: string) => void;
@@ -518,6 +523,9 @@ function BoardSvg({
     : null;
   const activeRoad = activeRoadId
     ? geometry.edges.find((edge) => edge.id === activeRoadId)
+    : null;
+  const activePort = activePortId
+    ? geometry.boundaryEdges.find((edge) => edge.id === activePortId)
     : null;
   const viewBoxBounds = useMemo(
     () => getViewBoxBounds(geometry.viewBox),
@@ -708,6 +716,7 @@ function BoardSvg({
         const port = board.ports[edge.id];
         const portPoint = getPortPoint(edge, geometry.boardCenter);
         const bridgeOpacity = port ? 0.95 : 0.25;
+        const isActive = activePortId === edge.id;
         return (
           <g key={edge.id}>
             <line
@@ -735,14 +744,26 @@ function BoardSvg({
               tabIndex={0}
               className="cursor-pointer outline-none"
               aria-label={`Port ${edge.id}`}
-              onClick={() => onPortClick(edge.id)}
+              aria-haspopup="menu"
+              aria-expanded={isActive}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPortClick(edge.id);
+              }}
               onKeyDown={(event) => onKeyActivate(event, () => onPortClick(edge.id))}
             >
+              <circle
+                cx={portPoint.x}
+                cy={portPoint.y}
+                r={32}
+                fill="transparent"
+                pointerEvents="all"
+              />
               <path
                 d={`M ${portPoint.x - 20} ${portPoint.y + 14} Q ${portPoint.x} ${portPoint.y + 25} ${portPoint.x + 20} ${portPoint.y + 14} L ${portPoint.x + 14} ${portPoint.y - 10} Q ${portPoint.x} ${portPoint.y - 18} ${portPoint.x - 14} ${portPoint.y - 10} Z`}
                 fill={port ? "#fffaf0" : "#9fd8e7"}
-                stroke={port ? "#855d2d" : "#317f94"}
-                strokeWidth={2}
+                stroke={isActive ? "#0f172a" : port ? "#855d2d" : "#317f94"}
+                strokeWidth={isActive ? 3 : 2}
                 opacity={port ? 1 : 0.35}
               />
               {port ? (
@@ -856,6 +877,18 @@ function BoardSvg({
           viewBoxBounds={viewBoxBounds}
           onRoadSet={onRoadSet}
           onRoadClear={onRoadClear}
+          onKeyActivate={onKeyActivate}
+        />
+      ) : null}
+      {activePort ? (
+        <PortMenu
+          key={activePort.id}
+          edge={activePort}
+          port={board.ports[activePort.id]}
+          boardCenter={geometry.boardCenter}
+          viewBoxBounds={viewBoxBounds}
+          onPortSet={onPortSet}
+          onPortClear={onPortClear}
           onKeyActivate={onKeyActivate}
         />
       ) : null}
@@ -1129,6 +1162,170 @@ function TileTerrainMenu({
           )}
         >
           {tile.robber ? "Robber on this tile" : "Place robber here"}
+        </text>
+      </g>
+    </g>
+  );
+}
+
+function PortMenu({
+  edge,
+  port,
+  boardCenter,
+  viewBoxBounds,
+  onPortSet,
+  onPortClear,
+  onKeyActivate,
+}: {
+  edge: EdgeGeometry;
+  port: PortType | undefined;
+  boardCenter: Point;
+  viewBoxBounds: ViewBoxBounds;
+  onPortSet: (edgeId: string, port: PortType) => void;
+  onPortClear: (edgeId: string) => void;
+  onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
+}) {
+  const anchor = getPortPoint(edge, boardCenter);
+  const menuWidth = 300;
+  const menuHeight = 146;
+  const menuX = clamp(
+    anchor.x - menuWidth / 2,
+    viewBoxBounds.x + 14,
+    viewBoxBounds.x + viewBoxBounds.width - menuWidth - 14,
+  );
+  const preferredMenuY = anchor.y - menuHeight - 40;
+  const menuY =
+    preferredMenuY >= viewBoxBounds.y + 14
+      ? preferredMenuY
+      : Math.min(
+          anchor.y + 40,
+          viewBoxBounds.y + viewBoxBounds.height - menuHeight - 14,
+        );
+  const arrowX = clamp(anchor.x, menuX + 24, menuX + menuWidth - 24);
+  const arrowPoints =
+    menuY > anchor.y
+      ? `${arrowX - 12},${menuY} ${arrowX},${menuY - 12} ${arrowX + 12},${menuY}`
+      : `${arrowX - 12},${menuY + menuHeight} ${arrowX},${menuY + menuHeight + 12} ${arrowX + 12},${menuY + menuHeight}`;
+
+  return (
+    <g
+      role="menu"
+      aria-label="Port type"
+      className="cursor-default"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <polygon
+        points={arrowPoints}
+        fill="#fffaf0"
+        stroke="#0f172a"
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      <rect
+        x={menuX}
+        y={menuY}
+        width={menuWidth}
+        height={menuHeight}
+        rx={10}
+        fill="#fffaf0"
+        stroke="#0f172a"
+        strokeWidth={2.5}
+      />
+      <text
+        x={menuX + 14}
+        y={menuY + 24}
+        className="fill-slate-700 text-[12px] font-black uppercase"
+      >
+        Port type
+      </text>
+      <g role="radiogroup" aria-label="Port type">
+        {PORT_OPTIONS.map((option, index) => {
+          const column = index % 3;
+          const row = Math.floor(index / 3);
+          const buttonX = menuX + 14 + column * 92;
+          const buttonY = menuY + 36 + row * 32;
+          const isSelected = port === option.value;
+          const label = getPortMenuLabel(option);
+
+          return (
+            <g
+              key={option.value}
+              role="menuitemradio"
+              aria-checked={isSelected}
+              aria-label={option.label}
+              tabIndex={0}
+              className="cursor-pointer outline-none"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPortSet(edge.id, option.value);
+              }}
+              onKeyDown={(event) =>
+                onKeyActivate(event, () => onPortSet(edge.id, option.value))
+              }
+            >
+              <title>{option.label}</title>
+              <rect
+                x={buttonX}
+                y={buttonY}
+                width={82}
+                height={24}
+                rx={6}
+                fill={isSelected ? "#083344" : "#ffffff"}
+                stroke={isSelected ? "#083344" : "#cbd5e1"}
+                strokeWidth={1.5}
+              />
+              <text
+                x={buttonX + 41}
+                y={buttonY + 16}
+                textAnchor="middle"
+                className={cn(
+                  "text-[11px] font-black",
+                  isSelected ? "fill-white" : "fill-slate-800",
+                )}
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+      <line
+        x1={menuX + 12}
+        y1={menuY + 108}
+        x2={menuX + menuWidth - 12}
+        y2={menuY + 108}
+        stroke="#e2e8f0"
+        strokeWidth={1.5}
+      />
+      <g
+        role="menuitem"
+        aria-label="Remove port"
+        tabIndex={0}
+        className="cursor-pointer outline-none"
+        onClick={(event) => {
+          event.stopPropagation();
+          onPortClear(edge.id);
+        }}
+        onKeyDown={(event) => onKeyActivate(event, () => onPortClear(edge.id))}
+      >
+        <title>Remove port</title>
+        <rect
+          x={menuX + 14}
+          y={menuY + 118}
+          width={menuWidth - 28}
+          height={22}
+          rx={6}
+          fill="#fff1f2"
+          stroke="#fda4af"
+          strokeWidth={1.5}
+        />
+        <ClearMenuIcon point={{ x: menuX + 29, y: menuY + 129 }} />
+        <text
+          x={menuX + 48}
+          y={menuY + 134}
+          className="fill-rose-900 text-[12px] font-black"
+        >
+          Remove
         </text>
       </g>
     </g>
@@ -1512,58 +1709,6 @@ function ClearMenuIcon({ point }: { point: Point }) {
       <line x1={point.x - 10} y1={point.y - 10} x2={point.x + 10} y2={point.y + 10} />
       <line x1={point.x + 10} y1={point.y - 10} x2={point.x - 10} y2={point.y + 10} />
     </g>
-  );
-}
-
-function EditorToolbar({
-  selectedPort,
-  onPortChange,
-  onReset,
-}: {
-  selectedPort: PortType;
-  onPortChange: (value: PortType) => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="grid gap-3 rounded-lg border border-white/35 bg-white/92 p-3 shadow-xl shadow-cyan-950/20 backdrop-blur lg:col-start-1 lg:row-start-2 2xl:grid-cols-[minmax(0,1fr)_auto]">
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-          <ShipWheel className="size-4" />
-          Port
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">
-          {PORT_OPTIONS.map((port) => (
-            <button
-              key={port.value}
-              type="button"
-              className={cn(
-                "flex min-h-12 items-center justify-center rounded-md border px-3 text-sm font-black shadow-sm transition",
-                selectedPort === port.value
-                  ? "border-cyan-950 bg-cyan-950 text-white"
-                  : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
-              )}
-              onClick={() => onPortChange(port.value)}
-            >
-              {port.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex justify-end 2xl:items-end">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-lg"
-          className="rounded-md text-slate-700 hover:bg-amber-100"
-          aria-label="Reset board"
-          title="Reset board"
-          onClick={onReset}
-        >
-          <Undo2 className="size-5" />
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -2096,6 +2241,13 @@ function getTerrainTrayLabel(
     return "Desert";
   }
   return terrain.resource;
+}
+
+function getPortMenuLabel(port: (typeof PORT_OPTIONS)[number]) {
+  if (port.value === "generic") {
+    return "3:1";
+  }
+  return port.label.replace(" 2:1", "");
 }
 
 function getPlayerOption(player: PlayerColor) {
