@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   Camera,
   CheckCircle2,
-  Route,
   ShipWheel,
   Sparkles,
   Undo2,
@@ -260,9 +259,9 @@ export function CatanBoardEditor({
 }: CatanBoardEditorProps) {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [activeTileId, setActiveTileId] = useState<string | null>(null);
+  const [activeRoadId, setActiveRoadId] = useState<string | null>(null);
   const [activeVertexId, setActiveVertexId] = useState<string | null>(null);
   const [selectedPort, setSelectedPort] = useState<PortType>("generic");
-  const [selectedPlayer, setSelectedPlayer] = useState<PlayerColor>("red");
   const geometry = useMemo(() => createBoardGeometry(), []);
   const warnings = useMemo(
     () => validateBoardState(board, geometry),
@@ -300,16 +299,22 @@ export function CatanBoardEditor({
     }));
   }
 
-  function toggleRoad(edgeId: string) {
+  function setRoad(edgeId: string, player: PlayerColor) {
     setBoard((current) => {
       const roads = { ...current.roads };
-      if (roads[edgeId]?.player === selectedPlayer) {
-        delete roads[edgeId];
-      } else {
-        roads[edgeId] = { player: selectedPlayer };
-      }
+      roads[edgeId] = { player };
       return { ...current, roads };
     });
+    setActiveRoadId(null);
+  }
+
+  function clearRoad(edgeId: string) {
+    setBoard((current) => {
+      const roads = { ...current.roads };
+      delete roads[edgeId];
+      return { ...current, roads };
+    });
+    setActiveRoadId(null);
   }
 
   function setPiece(vertexId: string, kind: PieceKind, player: PlayerColor) {
@@ -348,11 +353,13 @@ export function CatanBoardEditor({
   function resetBoard() {
     setBoard(createInitialBoard());
     setActiveTileId(null);
+    setActiveRoadId(null);
     setActiveVertexId(null);
   }
 
   function dismissBoardMenus() {
     setActiveTileId(null);
+    setActiveRoadId(null);
     setActiveVertexId(null);
   }
 
@@ -399,8 +406,10 @@ export function CatanBoardEditor({
             board={board}
             geometry={geometry}
             activeTileId={activeTileId}
+            activeRoadId={activeRoadId}
             activeVertexId={activeVertexId}
             onTileClick={(tileId) => {
+              setActiveRoadId(null);
               setActiveVertexId(null);
               setActiveTileId((current) =>
                 current === tileId ? null : tileId,
@@ -410,10 +419,24 @@ export function CatanBoardEditor({
             onTileTokenChange={updateTileToken}
             onTileRobberToggle={toggleRobber}
             onDismissMenus={dismissBoardMenus}
-            onPortClick={togglePort}
-            onRoadClick={toggleRoad}
+            onPortClick={(edgeId) => {
+              setActiveTileId(null);
+              setActiveRoadId(null);
+              setActiveVertexId(null);
+              togglePort(edgeId);
+            }}
+            onRoadClick={(edgeId) => {
+              setActiveTileId(null);
+              setActiveVertexId(null);
+              setActiveRoadId((current) =>
+                current === edgeId ? null : edgeId,
+              );
+            }}
+            onRoadSet={setRoad}
+            onRoadClear={clearRoad}
             onPieceClick={(vertexId) => {
               setActiveTileId(null);
+              setActiveRoadId(null);
               setActiveVertexId((current) =>
                 current === vertexId ? null : vertexId,
               );
@@ -435,9 +458,7 @@ export function CatanBoardEditor({
 
         <EditorToolbar
           selectedPort={selectedPort}
-          selectedPlayer={selectedPlayer}
           onPortChange={setSelectedPort}
-          onPlayerChange={setSelectedPlayer}
           onReset={resetBoard}
         />
       </div>
@@ -449,6 +470,7 @@ function BoardSvg({
   board,
   geometry,
   activeTileId,
+  activeRoadId,
   activeVertexId,
   onTileClick,
   onTileTerrainChange,
@@ -457,6 +479,8 @@ function BoardSvg({
   onDismissMenus,
   onPortClick,
   onRoadClick,
+  onRoadSet,
+  onRoadClear,
   onPieceClick,
   onPieceSet,
   onPieceClear,
@@ -465,6 +489,7 @@ function BoardSvg({
   board: BoardState;
   geometry: BoardGeometry;
   activeTileId: string | null;
+  activeRoadId: string | null;
   activeVertexId: string | null;
   onTileClick: (tileId: string) => void;
   onTileTerrainChange: (tileId: string, terrain: TerrainType) => void;
@@ -473,6 +498,8 @@ function BoardSvg({
   onDismissMenus: () => void;
   onPortClick: (edgeId: string) => void;
   onRoadClick: (edgeId: string) => void;
+  onRoadSet: (edgeId: string, player: PlayerColor) => void;
+  onRoadClear: (edgeId: string) => void;
   onPieceClick: (vertexId: string) => void;
   onPieceSet: (vertexId: string, kind: PieceKind, player: PlayerColor) => void;
   onPieceClear: (vertexId: string) => void;
@@ -488,6 +515,9 @@ function BoardSvg({
     activeTileIndex >= 0 ? geometry.hexes[activeTileIndex] : null;
   const activeVertex = activeVertexId
     ? geometry.vertices.find((vertex) => vertex.id === activeVertexId)
+    : null;
+  const activeRoad = activeRoadId
+    ? geometry.edges.find((edge) => edge.id === activeRoadId)
     : null;
   const viewBoxBounds = useMemo(
     () => getViewBoxBounds(geometry.viewBox),
@@ -739,7 +769,10 @@ function BoardSvg({
             tabIndex={0}
             className="cursor-pointer outline-none"
             aria-label={`Road ${edge.id}`}
-            onClick={() => onRoadClick(edge.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRoadClick(edge.id);
+            }}
             onKeyDown={(event) => onKeyActivate(event, () => onRoadClick(edge.id))}
           >
             <line
@@ -750,6 +783,7 @@ function BoardSvg({
               stroke="transparent"
               strokeWidth={24}
               strokeLinecap="round"
+              pointerEvents="all"
             />
             <line
               x1={edge.start.x}
@@ -814,6 +848,17 @@ function BoardSvg({
           </g>
         );
       })}
+      {activeRoad ? (
+        <RoadMenu
+          key={activeRoad.id}
+          edge={activeRoad}
+          road={board.roads[activeRoad.id]}
+          viewBoxBounds={viewBoxBounds}
+          onRoadSet={onRoadSet}
+          onRoadClear={onRoadClear}
+          onKeyActivate={onKeyActivate}
+        />
+      ) : null}
       {activeVertex ? (
         <VertexPieceMenu
           key={activeVertex.id}
@@ -1090,6 +1135,161 @@ function TileTerrainMenu({
   );
 }
 
+function RoadMenu({
+  edge,
+  road,
+  viewBoxBounds,
+  onRoadSet,
+  onRoadClear,
+  onKeyActivate,
+}: {
+  edge: EdgeGeometry;
+  road: RoadState | undefined;
+  viewBoxBounds: ViewBoxBounds;
+  onRoadSet: (edgeId: string, player: PlayerColor) => void;
+  onRoadClear: (edgeId: string) => void;
+  onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
+}) {
+  const anchor = midpoint(edge);
+  const menuWidth = 238;
+  const menuHeight = 118;
+  const menuX = clamp(
+    anchor.x - menuWidth / 2,
+    viewBoxBounds.x + 14,
+    viewBoxBounds.x + viewBoxBounds.width - menuWidth - 14,
+  );
+  const preferredMenuY = anchor.y - menuHeight - 36;
+  const menuY =
+    preferredMenuY >= viewBoxBounds.y + 14
+      ? preferredMenuY
+      : Math.min(
+          anchor.y + 36,
+          viewBoxBounds.y + viewBoxBounds.height - menuHeight - 14,
+        );
+  const arrowX = clamp(anchor.x, menuX + 24, menuX + menuWidth - 24);
+  const arrowPoints =
+    menuY > anchor.y
+      ? `${arrowX - 12},${menuY} ${arrowX},${menuY - 12} ${arrowX + 12},${menuY}`
+      : `${arrowX - 12},${menuY + menuHeight} ${arrowX},${menuY + menuHeight + 12} ${arrowX + 12},${menuY + menuHeight}`;
+
+  return (
+    <g
+      role="menu"
+      aria-label="Road player"
+      className="cursor-default"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <polygon
+        points={arrowPoints}
+        fill="#fffaf0"
+        stroke="#0f172a"
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      <rect
+        x={menuX}
+        y={menuY}
+        width={menuWidth}
+        height={menuHeight}
+        rx={10}
+        fill="#fffaf0"
+        stroke="#0f172a"
+        strokeWidth={2.5}
+      />
+      <text
+        x={menuX + 14}
+        y={menuY + 24}
+        className="fill-slate-700 text-[12px] font-black uppercase"
+      >
+        Road color
+      </text>
+      <g role="radiogroup" aria-label="Road color">
+        {PLAYER_OPTIONS.map((player, index) => {
+          const buttonX = menuX + 16 + index * 42;
+          const isSelected = road?.player === player.value;
+
+          return (
+            <g
+              key={player.value}
+              role="menuitemradio"
+              aria-checked={isSelected}
+              aria-label={player.label}
+              tabIndex={0}
+              className="cursor-pointer outline-none"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRoadSet(edge.id, player.value);
+              }}
+              onKeyDown={(event) =>
+                onKeyActivate(event, () => onRoadSet(edge.id, player.value))
+              }
+            >
+              <title>{player.label}</title>
+              <rect
+                x={buttonX}
+                y={menuY + 36}
+                width={32}
+                height={32}
+                rx={7}
+                fill={isSelected ? "#083344" : "#ffffff"}
+                stroke={isSelected ? "#083344" : "#cbd5e1"}
+                strokeWidth={1.5}
+              />
+              <circle
+                cx={buttonX + 16}
+                cy={menuY + 52}
+                r={9}
+                fill={player.fill}
+                stroke={player.value === "white" ? "#334155" : "rgba(0,0,0,0.35)"}
+                strokeWidth={1.75}
+              />
+            </g>
+          );
+        })}
+      </g>
+      <line
+        x1={menuX + 12}
+        y1={menuY + 78}
+        x2={menuX + menuWidth - 12}
+        y2={menuY + 78}
+        stroke="#e2e8f0"
+        strokeWidth={1.5}
+      />
+      <g
+        role="menuitem"
+        aria-label="Remove road"
+        tabIndex={0}
+        className="cursor-pointer outline-none"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRoadClear(edge.id);
+        }}
+        onKeyDown={(event) => onKeyActivate(event, () => onRoadClear(edge.id))}
+      >
+        <title>Remove road</title>
+        <rect
+          x={menuX + 14}
+          y={menuY + 88}
+          width={menuWidth - 28}
+          height={22}
+          rx={6}
+          fill="#fff1f2"
+          stroke="#fda4af"
+          strokeWidth={1.5}
+        />
+        <ClearMenuIcon point={{ x: menuX + 29, y: menuY + 99 }} />
+        <text
+          x={menuX + 48}
+          y={menuY + 104}
+          className="fill-rose-900 text-[12px] font-black"
+        >
+          Remove
+        </text>
+      </g>
+    </g>
+  );
+}
+
 function VertexPieceMenu({
   vertex,
   piece,
@@ -1317,48 +1517,15 @@ function ClearMenuIcon({ point }: { point: Point }) {
 
 function EditorToolbar({
   selectedPort,
-  selectedPlayer,
   onPortChange,
-  onPlayerChange,
   onReset,
 }: {
   selectedPort: PortType;
-  selectedPlayer: PlayerColor;
   onPortChange: (value: PortType) => void;
-  onPlayerChange: (value: PlayerColor) => void;
   onReset: () => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-lg border border-white/35 bg-white/92 p-3 shadow-xl shadow-cyan-950/20 backdrop-blur lg:col-start-1 lg:row-start-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto]">
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-          <Route className="size-4" />
-          Road player
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {PLAYER_OPTIONS.map((player) => (
-            <button
-              key={player.value}
-              type="button"
-              className={cn(
-                "flex min-h-12 items-center gap-2 rounded-md border px-3 text-sm font-bold shadow-sm transition",
-                selectedPlayer === player.value
-                  ? "border-cyan-950 bg-cyan-950 text-white"
-                  : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
-              )}
-              onClick={() => onPlayerChange(player.value)}
-            >
-              <span
-                className="size-6 rounded-full border border-black/25"
-                style={{ backgroundColor: player.fill }}
-                aria-hidden="true"
-              />
-              {player.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
+    <div className="grid gap-3 rounded-lg border border-white/35 bg-white/92 p-3 shadow-xl shadow-cyan-950/20 backdrop-blur lg:col-start-1 lg:row-start-2 2xl:grid-cols-[minmax(0,1fr)_auto]">
       <div>
         <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
           <ShipWheel className="size-4" />
