@@ -5,17 +5,13 @@ import {
   useId,
   useMemo,
   useState,
-  type ComponentType,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
 import {
   AlertTriangle,
-  Building2,
   Camera,
   CheckCircle2,
-  CircleDot,
-  Hexagon,
   Route,
   ShipWheel,
   Sparkles,
@@ -37,7 +33,6 @@ type NumberToken = 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | null;
 type PortType = "generic" | "brick" | "lumber" | "ore" | "grain" | "wool";
 type PlayerColor = "red" | "blue" | "white" | "orange";
 type PieceKind = "settlement" | "city";
-type ToolMode = "tile" | "port" | "road" | "piece" | "robber";
 
 type TileState = {
   id: string;
@@ -259,24 +254,11 @@ const NUMBER_TOKEN_OPTIONS: Array<Exclude<NumberToken, null>> = [
   12,
 ];
 
-const MODE_OPTIONS: Array<{
-  value: ToolMode;
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-}> = [
-  { value: "tile", label: "Tiles", icon: Hexagon },
-  { value: "port", label: "Ports", icon: ShipWheel },
-  { value: "road", label: "Roads", icon: Route },
-  { value: "piece", label: "Settlements and cities", icon: Building2 },
-  { value: "robber", label: "Robber", icon: CircleDot },
-];
-
 export function CatanBoardEditor({
   detectionId,
   isConvexConfigured,
 }: CatanBoardEditorProps) {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
-  const [mode, setMode] = useState<ToolMode>("tile");
   const [activeTileId, setActiveTileId] = useState<string | null>(null);
   const [activeVertexId, setActiveVertexId] = useState<string | null>(null);
   const [selectedPort, setSelectedPort] = useState<PortType>("generic");
@@ -330,11 +312,11 @@ export function CatanBoardEditor({
     });
   }
 
-  function setPiece(vertexId: string, kind: PieceKind) {
+  function setPiece(vertexId: string, kind: PieceKind, player: PlayerColor) {
     setBoard((current) => {
       const pieces = { ...current.pieces };
       pieces[vertexId] = {
-        player: selectedPlayer,
+        player,
         kind,
       };
       return { ...current, pieces };
@@ -363,12 +345,6 @@ export function CatanBoardEditor({
     });
   }
 
-  function changeMode(nextMode: ToolMode) {
-    setMode(nextMode);
-    setActiveTileId(null);
-    setActiveVertexId(null);
-  }
-
   function resetBoard() {
     setBoard(createInitialBoard());
     setActiveTileId(null);
@@ -393,15 +369,13 @@ export function CatanBoardEditor({
   return (
     <main
       className="min-h-dvh overflow-auto bg-[#086f9f] text-slate-950 lg:h-dvh lg:overflow-hidden"
-      onClick={dismissBoardMenus}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          dismissBoardMenus();
+        }
+      }}
     >
-      <div className="grid min-h-dvh gap-3 p-3 md:p-4 lg:h-dvh lg:min-h-0 lg:grid-cols-[4.5rem_minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)_auto]">
-        <ModeRail
-          mode={mode}
-          onModeChange={changeMode}
-          onReset={resetBoard}
-        />
-
+      <div className="grid min-h-dvh gap-3 p-3 md:p-4 lg:h-dvh lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)_auto]">
         <section className="relative min-h-[560px] overflow-hidden rounded-lg border border-cyan-950/25 bg-[#0d75a6] shadow-2xl shadow-cyan-950/30 lg:min-h-0">
           <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(255,255,255,0.13)_0_1px,transparent_1px_42px),linear-gradient(25deg,rgba(255,255,255,0.08)_0_1px,transparent_1px_54px)]" />
           <div className="absolute left-3 top-3 z-10 flex items-center gap-3 rounded-md border border-white/30 bg-white/85 px-3 py-2 shadow-lg shadow-cyan-950/20 backdrop-blur">
@@ -424,29 +398,21 @@ export function CatanBoardEditor({
           <BoardSvg
             board={board}
             geometry={geometry}
-            mode={mode}
             activeTileId={activeTileId}
             activeVertexId={activeVertexId}
-            selectedPlayer={selectedPlayer}
             onTileClick={(tileId) => {
-              if (mode === "tile") {
-                setActiveVertexId(null);
-                setActiveTileId((current) =>
-                  current === tileId ? null : tileId,
-                );
-              }
-              if (mode === "robber") {
-                dismissBoardMenus();
-                toggleRobber(tileId);
-              }
+              setActiveVertexId(null);
+              setActiveTileId((current) =>
+                current === tileId ? null : tileId,
+              );
             }}
             onTileTerrainChange={updateTileTerrain}
             onTileTokenChange={updateTileToken}
+            onTileRobberToggle={toggleRobber}
             onDismissMenus={dismissBoardMenus}
-            onPortClick={(edgeId) => mode === "port" && togglePort(edgeId)}
-            onRoadClick={(edgeId) => mode === "road" && toggleRoad(edgeId)}
+            onPortClick={togglePort}
+            onRoadClick={toggleRoad}
             onPieceClick={(vertexId) => {
-              setMode("piece");
               setActiveTileId(null);
               setActiveVertexId((current) =>
                 current === vertexId ? null : vertexId,
@@ -467,79 +433,27 @@ export function CatanBoardEditor({
           <WarningsPanel warnings={warnings} />
         </aside>
 
-        {mode !== "tile" ? (
-          <EditorToolbar
-            mode={mode}
-            selectedPort={selectedPort}
-            selectedPlayer={selectedPlayer}
-            onPortChange={setSelectedPort}
-            onPlayerChange={setSelectedPlayer}
-          />
-        ) : null}
+        <EditorToolbar
+          selectedPort={selectedPort}
+          selectedPlayer={selectedPlayer}
+          onPortChange={setSelectedPort}
+          onPlayerChange={setSelectedPlayer}
+          onReset={resetBoard}
+        />
       </div>
     </main>
-  );
-}
-
-function ModeRail({
-  mode,
-  onModeChange,
-  onReset,
-}: {
-  mode: ToolMode;
-  onModeChange: (mode: ToolMode) => void;
-  onReset: () => void;
-}) {
-  return (
-    <nav className="flex items-center gap-2 rounded-lg border border-white/25 bg-white/90 p-2 shadow-xl shadow-cyan-950/20 backdrop-blur lg:row-span-2 lg:flex-col lg:self-start">
-      {MODE_OPTIONS.map((option) => {
-        const Icon = option.icon;
-        return (
-          <Button
-            key={option.value}
-            type="button"
-            variant={mode === option.value ? "default" : "ghost"}
-            size="icon-lg"
-            className={cn(
-              "rounded-md",
-              mode === option.value
-                ? "bg-cyan-950 text-white hover:bg-cyan-900"
-                : "text-slate-700 hover:bg-cyan-100",
-            )}
-            aria-label={option.label}
-            title={option.label}
-            onClick={() => onModeChange(option.value)}
-          >
-            <Icon className="size-5" />
-          </Button>
-        );
-      })}
-      <div className="h-8 w-px bg-slate-200 lg:h-px lg:w-8" />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-lg"
-        className="rounded-md text-slate-700 hover:bg-amber-100"
-        aria-label="Reset board"
-        title="Reset board"
-        onClick={onReset}
-      >
-        <Undo2 className="size-5" />
-      </Button>
-    </nav>
   );
 }
 
 function BoardSvg({
   board,
   geometry,
-  mode,
   activeTileId,
   activeVertexId,
-  selectedPlayer,
   onTileClick,
   onTileTerrainChange,
   onTileTokenChange,
+  onTileRobberToggle,
   onDismissMenus,
   onPortClick,
   onRoadClick,
@@ -550,18 +464,17 @@ function BoardSvg({
 }: {
   board: BoardState;
   geometry: BoardGeometry;
-  mode: ToolMode;
   activeTileId: string | null;
   activeVertexId: string | null;
-  selectedPlayer: PlayerColor;
   onTileClick: (tileId: string) => void;
   onTileTerrainChange: (tileId: string, terrain: TerrainType) => void;
   onTileTokenChange: (tileId: string, token: Exclude<NumberToken, null>) => void;
+  onTileRobberToggle: (tileId: string) => void;
   onDismissMenus: () => void;
   onPortClick: (edgeId: string) => void;
   onRoadClick: (edgeId: string) => void;
   onPieceClick: (vertexId: string) => void;
-  onPieceSet: (vertexId: string, kind: PieceKind) => void;
+  onPieceSet: (vertexId: string, kind: PieceKind, player: PlayerColor) => void;
   onPieceClear: (vertexId: string) => void;
   onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
 }) {
@@ -586,7 +499,11 @@ function BoardSvg({
       viewBox={geometry.viewBox}
       className="relative z-0 block h-full min-h-[560px] w-full lg:min-h-0"
       aria-label="Editable Catan board"
-      onClick={onDismissMenus}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onDismissMenus();
+        }
+      }}
     >
       <defs>
         <filter id="tile-shadow" x="-25%" y="-25%" width="150%" height="150%">
@@ -602,7 +519,17 @@ function BoardSvg({
         ))}
       </defs>
 
-      <rect x="-200" y="-200" width="1400" height="1200" fill="#0d75a6" />
+      <rect
+        x="-200"
+        y="-200"
+        width="1400"
+        height="1200"
+        fill="#0d75a6"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDismissMenus();
+        }}
+      />
       <g opacity="0.22">
         <path
           d="M-120 180 C90 110 190 240 350 150 C500 65 650 115 850 35"
@@ -665,14 +592,8 @@ function BoardSvg({
               <polygon
                 points={pointsToString(hex.points)}
                 fill={terrain.fill}
-                stroke={
-                  isActive
-                    ? "#0f172a"
-                    : mode === "tile"
-                      ? "#fff7d6"
-                      : "#8d6a2f"
-                }
-                strokeWidth={isActive ? 7 : mode === "tile" ? 5 : 3}
+                stroke={isActive ? "#0f172a" : "#fff7d6"}
+                strokeWidth={isActive ? 7 : 5}
                 strokeLinejoin="round"
               />
               {terrain.imageHref ? (
@@ -756,7 +677,7 @@ function BoardSvg({
       {geometry.boundaryEdges.map((edge) => {
         const port = board.ports[edge.id];
         const portPoint = getPortPoint(edge, geometry.boardCenter);
-        const bridgeOpacity = port ? 0.95 : mode === "port" ? 0.25 : 0;
+        const bridgeOpacity = port ? 0.95 : 0.25;
         return (
           <g key={edge.id}>
             <line
@@ -792,7 +713,7 @@ function BoardSvg({
                 fill={port ? "#fffaf0" : "#9fd8e7"}
                 stroke={port ? "#855d2d" : "#317f94"}
                 strokeWidth={2}
-                opacity={port ? 1 : mode === "port" ? 0.35 : 0}
+                opacity={port ? 1 : 0.35}
               />
               {port ? (
                 <text
@@ -838,7 +759,7 @@ function BoardSvg({
               stroke="#2a1d13"
               strokeWidth={road ? 13 : 5}
               strokeLinecap="round"
-              opacity={road ? 0.7 : mode === "road" ? 0.2 : 0}
+              opacity={road ? 0.7 : 0.2}
             />
             <line
               x1={edge.start.x}
@@ -848,7 +769,7 @@ function BoardSvg({
               stroke={road ? getPlayerOption(road.player).fill : "#fff5d6"}
               strokeWidth={road ? 9 : 3}
               strokeLinecap="round"
-              opacity={road ? 1 : mode === "road" ? 0.68 : 0.08}
+              opacity={road ? 1 : 0.52}
             />
           </g>
         );
@@ -884,7 +805,7 @@ function BoardSvg({
                 fill="#d8c453"
                 stroke="#7b6a24"
                 strokeWidth={2}
-                opacity={mode === "piece" ? 0.74 : 0.24}
+                opacity={0.56}
               />
             ) : null}
             {piece ? (
@@ -893,24 +814,25 @@ function BoardSvg({
           </g>
         );
       })}
-      {mode === "piece" && activeVertex ? (
+      {activeVertex ? (
         <VertexPieceMenu
+          key={activeVertex.id}
           vertex={activeVertex}
           piece={board.pieces[activeVertex.id]}
-          selectedPlayer={selectedPlayer}
           viewBoxBounds={viewBoxBounds}
           onPieceSet={onPieceSet}
           onPieceClear={onPieceClear}
           onKeyActivate={onKeyActivate}
         />
       ) : null}
-      {mode === "tile" && activeTile && activeHex ? (
+      {activeTile && activeHex ? (
         <TileTerrainMenu
           tile={activeTile}
           hex={activeHex}
           viewBoxBounds={viewBoxBounds}
           onTerrainChange={onTileTerrainChange}
           onTokenChange={onTileTokenChange}
+          onRobberToggle={onTileRobberToggle}
           onKeyActivate={onKeyActivate}
         />
       ) : null}
@@ -924,6 +846,7 @@ function TileTerrainMenu({
   viewBoxBounds,
   onTerrainChange,
   onTokenChange,
+  onRobberToggle,
   onKeyActivate,
 }: {
   tile: TileState;
@@ -931,11 +854,12 @@ function TileTerrainMenu({
   viewBoxBounds: ViewBoxBounds;
   onTerrainChange: (tileId: string, terrain: TerrainType) => void;
   onTokenChange: (tileId: string, token: Exclude<NumberToken, null>) => void;
+  onRobberToggle: (tileId: string) => void;
   onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
 }) {
   const menuWidth = 336;
   const canEditToken = tile.terrain !== "desert";
-  const menuHeight = canEditToken ? 204 : 112;
+  const menuHeight = canEditToken ? 238 : 146;
   const menuX = clamp(
     hex.center.x - menuWidth / 2,
     viewBoxBounds.x + 14,
@@ -1114,6 +1038,54 @@ function TileTerrainMenu({
           })}
         </>
       ) : null}
+      <line
+        x1={menuX + 12}
+        y1={menuY + menuHeight - 37}
+        x2={menuX + menuWidth - 12}
+        y2={menuY + menuHeight - 37}
+        stroke="#e2e8f0"
+        strokeWidth={1.5}
+      />
+      <g
+        role="menuitemcheckbox"
+        aria-checked={tile.robber}
+        tabIndex={0}
+        className="cursor-pointer outline-none"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRobberToggle(tile.id);
+        }}
+        onKeyDown={(event) =>
+          onKeyActivate(event, () => onRobberToggle(tile.id))
+        }
+      >
+        <rect
+          x={menuX + 12}
+          y={menuY + menuHeight - 28}
+          width={menuWidth - 24}
+          height={22}
+          rx={6}
+          fill={tile.robber ? "#083344" : "#ffffff"}
+          stroke={tile.robber ? "#083344" : "#cbd5e1"}
+          strokeWidth={1.5}
+        />
+        <circle
+          cx={menuX + 27}
+          cy={menuY + menuHeight - 17}
+          r={5}
+          fill={tile.robber ? "#ffffff" : "#475569"}
+        />
+        <text
+          x={menuX + 44}
+          y={menuY + menuHeight - 12}
+          className={cn(
+            "text-[12px] font-black",
+            tile.robber ? "fill-white" : "fill-slate-800",
+          )}
+        >
+          {tile.robber ? "Robber on this tile" : "Place robber here"}
+        </text>
+      </g>
     </g>
   );
 }
@@ -1121,7 +1093,6 @@ function TileTerrainMenu({
 function VertexPieceMenu({
   vertex,
   piece,
-  selectedPlayer,
   viewBoxBounds,
   onPieceSet,
   onPieceClear,
@@ -1129,15 +1100,16 @@ function VertexPieceMenu({
 }: {
   vertex: VertexGeometry;
   piece: PieceState | undefined;
-  selectedPlayer: PlayerColor;
   viewBoxBounds: ViewBoxBounds;
-  onPieceSet: (vertexId: string, kind: PieceKind) => void;
+  onPieceSet: (vertexId: string, kind: PieceKind, player: PlayerColor) => void;
   onPieceClear: (vertexId: string) => void;
   onKeyActivate: (event: KeyboardEvent<SVGGElement>, action: () => void) => void;
 }) {
-  const menuWidth = 294;
-  const menuHeight = 90;
-  const player = getPlayerOption(selectedPlayer);
+  const [menuPlayer, setMenuPlayer] = useState<PlayerColor>(
+    () => piece?.player ?? "red",
+  );
+  const menuWidth = 266;
+  const menuHeight = 150;
   const menuX = clamp(
     vertex.point.x - menuWidth / 2,
     viewBoxBounds.x + 14,
@@ -1148,29 +1120,8 @@ function VertexPieceMenu({
     vertex.point.y - menuHeight - 38,
   );
   const arrowX = clamp(vertex.point.x, menuX + 24, menuX + menuWidth - 24);
-
-  const actions: Array<{
-    label: string;
-    isSelected: boolean;
-    onClick: () => void;
-  }> = [
-    {
-      label: "Settlement",
-      isSelected:
-        piece?.player === selectedPlayer && piece.kind === "settlement",
-      onClick: () => onPieceSet(vertex.id, "settlement"),
-    },
-    {
-      label: "City",
-      isSelected: piece?.player === selectedPlayer && piece.kind === "city",
-      onClick: () => onPieceSet(vertex.id, "city"),
-    },
-    {
-      label: "Clear",
-      isSelected: false,
-      onClick: () => onPieceClear(vertex.id),
-    },
-  ];
+  const selectedPlayer = getPlayerOption(menuPlayer);
+  const selectedStroke = menuPlayer === "white" ? "#334155" : "#111827";
 
   return (
     <g
@@ -1198,164 +1149,253 @@ function VertexPieceMenu({
         stroke="#0f172a"
         strokeWidth={2.5}
       />
-      <circle
-        cx={menuX + 21}
-        cy={menuY + 22}
-        r={8}
-        fill={player.fill}
-        stroke="rgba(0,0,0,0.35)"
-        strokeWidth={1.5}
-      />
       <text
-        x={menuX + 36}
-        y={menuY + 27}
+        x={menuX + 14}
+        y={menuY + 24}
         className="fill-slate-700 text-[12px] font-black uppercase"
       >
-        {player.label}
+        Settlement or city
       </text>
-      {actions.map((action, index) => {
-        const buttonX = menuX + 12 + index * 90;
-        const buttonY = menuY + 42;
-        const isClear = action.label === "Clear";
+      <g role="radiogroup" aria-label="Piece color">
+        {PLAYER_OPTIONS.map((player, index) => {
+          const buttonX = menuX + 16 + index * 42;
+          const isSelected = player.value === menuPlayer;
+
+          return (
+            <g
+              key={player.value}
+              role="menuitemradio"
+              aria-checked={isSelected}
+              aria-label={player.label}
+              tabIndex={0}
+              className="cursor-pointer outline-none"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuPlayer(player.value);
+              }}
+              onKeyDown={(event) =>
+                onKeyActivate(event, () => setMenuPlayer(player.value))
+              }
+            >
+              <title>{player.label}</title>
+              <rect
+                x={buttonX}
+                y={menuY + 36}
+                width={32}
+                height={32}
+                rx={7}
+                fill={isSelected ? "#083344" : "#ffffff"}
+                stroke={isSelected ? "#083344" : "#cbd5e1"}
+                strokeWidth={1.5}
+              />
+              <circle
+                cx={buttonX + 16}
+                cy={menuY + 52}
+                r={9}
+                fill={player.fill}
+                stroke={player.value === "white" ? "#334155" : "rgba(0,0,0,0.35)"}
+                strokeWidth={1.75}
+              />
+            </g>
+          );
+        })}
+      </g>
+
+      <line
+        x1={menuX + 12}
+        y1={menuY + 78}
+        x2={menuX + menuWidth - 12}
+        y2={menuY + 78}
+        stroke="#e2e8f0"
+        strokeWidth={1.5}
+      />
+      {(["settlement", "city"] as const).map((kind, index) => {
+        const buttonX = menuX + 16 + index * 62;
+        const isSelected = piece?.player === menuPlayer && piece.kind === kind;
+        const label = kind === "settlement" ? "Settlement" : "City";
+        const onClick = () => onPieceSet(vertex.id, kind, menuPlayer);
 
         return (
           <g
-            key={action.label}
-            role="menuitem"
+            key={kind}
+            role="menuitemradio"
+            aria-checked={isSelected}
+            aria-label={`${selectedPlayer.label} ${label}`}
             tabIndex={0}
             className="cursor-pointer outline-none"
             onClick={(event) => {
               event.stopPropagation();
-              action.onClick();
+              onClick();
             }}
-            onKeyDown={(event) => onKeyActivate(event, action.onClick)}
+            onKeyDown={(event) => onKeyActivate(event, onClick)}
           >
+            <title>{`${selectedPlayer.label} ${label}`}</title>
             <rect
               x={buttonX}
-              y={buttonY}
-              width={84}
-              height={30}
-              rx={6}
-              fill={
-                action.isSelected
-                  ? "#083344"
-                  : isClear
-                    ? "#fff1f2"
-                    : "#ffffff"
-              }
-              stroke={
-                action.isSelected
-                  ? "#083344"
-                  : isClear
-                    ? "#fda4af"
-                    : "#cbd5e1"
-              }
+              y={menuY + 90}
+              width={52}
+              height={42}
+              rx={7}
+              fill={isSelected ? "#083344" : "#ffffff"}
+              stroke={isSelected ? "#083344" : "#cbd5e1"}
               strokeWidth={1.5}
             />
-            <text
-              x={buttonX + 42}
-              y={buttonY + 20}
-              textAnchor="middle"
-              className={cn(
-                "text-[12px] font-black",
-                action.isSelected
-                  ? "fill-white"
-                  : isClear
-                    ? "fill-rose-800"
-                    : "fill-slate-800",
-              )}
-            >
-              {action.label}
-            </text>
+            <PieceMenuIcon
+              kind={kind}
+              point={{ x: buttonX + 26, y: menuY + 112 }}
+              fill={selectedPlayer.fill}
+              stroke={selectedStroke}
+            />
           </g>
         );
       })}
+      <g
+        role="menuitem"
+        aria-label="Clear"
+        tabIndex={0}
+        className="cursor-pointer outline-none"
+        onClick={(event) => {
+          event.stopPropagation();
+          onPieceClear(vertex.id);
+        }}
+        onKeyDown={(event) => onKeyActivate(event, () => onPieceClear(vertex.id))}
+      >
+        <title>Clear</title>
+        <rect
+          x={menuX + menuWidth - 68}
+          y={menuY + 90}
+          width={52}
+          height={42}
+          rx={7}
+          fill="#fff1f2"
+          stroke="#fda4af"
+          strokeWidth={1.5}
+        />
+        <ClearMenuIcon point={{ x: menuX + menuWidth - 42, y: menuY + 111 }} />
+      </g>
+    </g>
+  );
+}
+
+function PieceMenuIcon({
+  kind,
+  point,
+  fill,
+  stroke,
+}: {
+  kind: PieceKind;
+  point: Point;
+  fill: string;
+  stroke: string;
+}) {
+  if (kind === "city") {
+    return (
+      <g>
+        <rect x={point.x - 14} y={point.y - 2} width={28} height={18} rx={3} fill={fill} stroke={stroke} strokeWidth={2.5} />
+        <rect x={point.x + 1} y={point.y - 15} width={14} height={30} rx={3} fill={fill} stroke={stroke} strokeWidth={2.5} />
+        <polygon points={`${point.x - 17},${point.y - 2} ${point.x - 1},${point.y - 18} ${point.x + 16},${point.y - 2}`} fill={fill} stroke={stroke} strokeWidth={2.5} />
+      </g>
+    );
+  }
+
+  return (
+    <g>
+      <rect x={point.x - 13} y={point.y + 1} width={26} height={18} rx={4} fill={fill} stroke={stroke} strokeWidth={2.5} />
+      <polygon points={`${point.x - 16},${point.y + 2} ${point.x},${point.y - 15} ${point.x + 16},${point.y + 2}`} fill={fill} stroke={stroke} strokeWidth={2.5} />
+    </g>
+  );
+}
+
+function ClearMenuIcon({ point }: { point: Point }) {
+  return (
+    <g fill="none" stroke="#9f1239" strokeLinecap="round" strokeWidth={4}>
+      <line x1={point.x - 10} y1={point.y - 10} x2={point.x + 10} y2={point.y + 10} />
+      <line x1={point.x + 10} y1={point.y - 10} x2={point.x - 10} y2={point.y + 10} />
     </g>
   );
 }
 
 function EditorToolbar({
-  mode,
   selectedPort,
   selectedPlayer,
   onPortChange,
   onPlayerChange,
+  onReset,
 }: {
-  mode: ToolMode;
   selectedPort: PortType;
   selectedPlayer: PlayerColor;
   onPortChange: (value: PortType) => void;
   onPlayerChange: (value: PlayerColor) => void;
+  onReset: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-white/35 bg-white/92 p-3 shadow-xl shadow-cyan-950/20 backdrop-blur lg:col-start-2 lg:row-start-2">
-      {mode === "port" ? (
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-            <ShipWheel className="size-4" />
-            Port
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {PORT_OPTIONS.map((port) => (
-              <button
-                key={port.value}
-                type="button"
-                className={cn(
-                  "flex min-h-14 items-center justify-center rounded-md border px-3 text-sm font-black shadow-sm transition",
-                  selectedPort === port.value
-                    ? "border-cyan-950 bg-cyan-950 text-white"
-                    : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
-                )}
-                onClick={() => onPortChange(port.value)}
-              >
-                {port.label}
-              </button>
-            ))}
-          </div>
+    <div className="grid gap-3 rounded-lg border border-white/35 bg-white/92 p-3 shadow-xl shadow-cyan-950/20 backdrop-blur lg:col-start-1 lg:row-start-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto]">
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
+          <Route className="size-4" />
+          Road player
         </div>
-      ) : null}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {PLAYER_OPTIONS.map((player) => (
+            <button
+              key={player.value}
+              type="button"
+              className={cn(
+                "flex min-h-12 items-center gap-2 rounded-md border px-3 text-sm font-bold shadow-sm transition",
+                selectedPlayer === player.value
+                  ? "border-cyan-950 bg-cyan-950 text-white"
+                  : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
+              )}
+              onClick={() => onPlayerChange(player.value)}
+            >
+              <span
+                className="size-6 rounded-full border border-black/25"
+                style={{ backgroundColor: player.fill }}
+                aria-hidden="true"
+              />
+              {player.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {mode === "road" || mode === "piece" ? (
-        <div>
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-              <Route className="size-4" />
-              Player
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {PLAYER_OPTIONS.map((player) => (
-                <button
-                  key={player.value}
-                  type="button"
-                  className={cn(
-                    "flex min-h-14 items-center gap-2 rounded-md border px-3 text-sm font-bold shadow-sm transition",
-                    selectedPlayer === player.value
-                      ? "border-cyan-950 bg-cyan-950 text-white"
-                      : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
-                  )}
-                  onClick={() => onPlayerChange(player.value)}
-                >
-                  <span
-                    className="size-7 rounded-full border border-black/25"
-                    style={{ backgroundColor: player.fill }}
-                    aria-hidden="true"
-                  />
-                  {player.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
+          <ShipWheel className="size-4" />
+          Port
         </div>
-      ) : null}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">
+          {PORT_OPTIONS.map((port) => (
+            <button
+              key={port.value}
+              type="button"
+              className={cn(
+                "flex min-h-12 items-center justify-center rounded-md border px-3 text-sm font-black shadow-sm transition",
+                selectedPort === port.value
+                  ? "border-cyan-950 bg-cyan-950 text-white"
+                  : "border-slate-200 bg-white text-slate-800 hover:bg-cyan-50",
+              )}
+              onClick={() => onPortChange(port.value)}
+            >
+              {port.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {mode === "robber" ? (
-        <div className="flex min-h-20 items-center justify-center gap-3 rounded-md bg-slate-950 px-4 py-3 text-white">
-          <CircleDot className="size-6" />
-          <span className="text-sm font-black uppercase tracking-wide">
-            Robber
-          </span>
-        </div>
-      ) : null}
+      <div className="flex justify-end 2xl:items-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-lg"
+          className="rounded-md text-slate-700 hover:bg-amber-100"
+          aria-label="Reset board"
+          title="Reset board"
+          onClick={onReset}
+        >
+          <Undo2 className="size-5" />
+        </Button>
+      </div>
     </div>
   );
 }
